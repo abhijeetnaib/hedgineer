@@ -70,11 +70,32 @@ today = datetime.date.today()
 perf_start_date = (today - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
 perf_end_date = today.strftime('%Y-%m-%d')
 index_history_df = calculate_index_for_date_range(db_manager, perf_start_date, perf_end_date)
-st.write("Index History DataFrame shape:", index_history_df.shape)
 
 if index_history_df.empty:
     st.write("No index performance data available for the past 30 days.")
 else:
     st.subheader("Index Performance Over the Past 30 Days")
-    index_history_df = index_history_df.set_index('date')
-    st.line_chart(index_history_df['index_value'])
+    index_history_df['daily_change'] = index_history_df['index_value'].pct_change() * 100
+    index_history_df['cumulative_return'] = (1 + index_history_df['daily_change'] / 100).cumprod() - 1
+    st.line_chart(index_history_df.set_index('date')['index_value'])
+
+    # Display summary metrics
+    st.subheader("Summary Metrics")
+    st.write(f"Cumulative Return: {index_history_df['cumulative_return'].iloc[-1]:.2%}")
+    st.write(f"Average Daily Change: {index_history_df['daily_change'].mean():.2f}%")
+
+# Highlight composition changes
+composition_changes_query = """
+    SELECT DISTINCT date
+    FROM daily_data
+    WHERE ticker NOT IN (
+        SELECT ticker
+        FROM daily_data
+        WHERE DATE(date) = ?
+    )
+"""
+composition_changes_df = pd.read_sql_query(composition_changes_query, db_manager.conn, params=(start_date,))
+if not composition_changes_df.empty:
+    st.subheader("Composition Changes")
+    st.write("Days with changes in index composition:")
+    st.dataframe(composition_changes_df)
